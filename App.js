@@ -267,7 +267,7 @@ function Setup({ s, C, players, sample, scores, settings, error, onAdd, onRemove
         {settings.mode === 'similar' ? (
           <Toggle s={s} title="Imposter knows their role" hint={'Off is the classic "Undercover" style.'} value={settings.knows} onChange={(v) => update({ knows: v })} />
         ) : null}
-        <Toggle s={s} title="Show the category to everyone" hint="Gives the imposter a fighting chance." value={settings.hint} onChange={(v) => update({ hint: v })} />
+        <Toggle s={s} title="Show the category to everyone" hint={settings.mode === 'blank' ? 'The imposter always sees the category as a hint. This shows it to the crew too.' : 'Gives the imposter a fighting chance.'} value={settings.hint} onChange={(v) => update({ hint: v })} />
         <View style={s.setting}>
           <Text style={s.strong}>Number of imposters</Text>
           <Seg s={s} value={settings.imposters} onChange={(v) => update({ imposters: v })} maxEnabled={maxI} options={[[1, '1'], [2, '2'], [3, '3']]} />
@@ -354,29 +354,54 @@ function Reveal({ s, players, settings, round, setRound, setScreen }) {
   const isImp = round.imposters.includes(i);
 
   let title = 'Your word', word = round.word, note = null, redCard = false;
+  // The imposter always gets the category as a hint when they have no word.
+  let showCat = settings.hint;
   if (isImp && settings.mode === 'blank') {
-    title = 'You are the'; word = 'Imposter'; redCard = true;
-    note = 'Listen to the clues, blend in, and work out the word.';
+    title = 'You are the'; word = 'Imposter'; redCard = true; showCat = true;
+    note = 'Use the category hint, listen to the clues, and blend in.';
   } else if (isImp && settings.mode === 'similar') {
     word = round.alt;
     if (settings.knows) { title = "You're the imposter. Your decoy word"; redCard = true; note = 'Everyone else has a different, related word.'; }
   }
+
+  const onOpen = () => {
+    setOpen(true); setSeen(true);
+    if (redCard) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      Vibration.vibrate([0, 120, 80, 120]);
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    }
+  };
 
   return (
     <View style={s.stage}>
       <Progress s={s} total={players.length} idx={i} />
       <Text style={[s.label, s.center]}>{players[i].toUpperCase()}'S SECRET</Text>
       <Pressable
-        onPressIn={() => { setOpen(true); setSeen(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); }}
+        onPressIn={onOpen}
         onPressOut={() => setOpen(false)}
         delayLongPress={100000}
         accessibilityRole="button" accessibilityLabel="Press and hold to see your word"
         style={[s.card, open && s.cardOpen, open && redCard && s.cardImp]}>
-        {open ? (
+        {open && redCard ? (
+          <View style={s.face}>
+            <View style={s.impBadge}><Text style={s.impBadgeText}>!</Text></View>
+            <Text style={[s.impLabel, s.center]}>{title.toUpperCase()}</Text>
+            <Text style={s.impSecret}>{word}</Text>
+            {showCat ? (
+              <View style={s.impHint}>
+                <Text style={s.impHintLabel}>YOUR HINT · CATEGORY</Text>
+                <Text style={s.impHintText}>{round.cat}</Text>
+              </View>
+            ) : null}
+            {note ? <Text style={[s.impNote, s.center]}>{note}</Text> : null}
+          </View>
+        ) : open ? (
           <View style={s.face}>
             <Text style={[s.label, s.center]}>{title.toUpperCase()}</Text>
-            <Text style={[s.secret, redCard && s.secretImp]}>{word}</Text>
-            {settings.hint ? <Text style={[s.label, s.center]}>CATEGORY · {round.cat.toUpperCase()}</Text> : null}
+            <Text style={s.secret}>{word}</Text>
+            {showCat ? <Text style={[s.label, s.center]}>CATEGORY · {round.cat.toUpperCase()}</Text> : null}
             {note ? <Text style={[s.hint, s.center]}>{note}</Text> : null}
           </View>
         ) : (
@@ -625,7 +650,15 @@ function makeStyles(C) {
 
     card: { width: '100%', maxWidth: 340, aspectRatio: 3 / 4, alignSelf: 'center', borderRadius: 22, backgroundColor: C.sealed, alignItems: 'center', justifyContent: 'center', padding: 24, borderWidth: 2, borderColor: C.sealed, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 6 },
     cardOpen: { backgroundColor: C.surface, borderColor: C.crew },
-    cardImp: { borderColor: C.accent },
+    cardImp: { backgroundColor: C.accent, borderColor: C.accent, shadowColor: C.accent, shadowOpacity: 0.55, shadowRadius: 24 },
+    impBadge: { width: 64, height: 64, borderRadius: 32, borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+    impBadgeText: { color: '#FFFFFF', fontSize: 38, fontWeight: '900', lineHeight: 42 },
+    impLabel: { color: '#FFFFFF', opacity: 0.85, fontFamily: MONO, fontSize: 12, letterSpacing: 2 },
+    impSecret: { color: '#FFFFFF', fontSize: 46, fontWeight: '900', textAlign: 'center', lineHeight: 50, textTransform: 'uppercase', letterSpacing: 1 },
+    impHint: { backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', gap: 2 },
+    impHintLabel: { color: '#FFFFFF', opacity: 0.8, fontFamily: MONO, fontSize: 10, letterSpacing: 1.5 },
+    impHintText: { color: '#FFFFFF', fontSize: 22, fontWeight: '800' },
+    impNote: { color: '#FFFFFF', opacity: 0.9, fontSize: 14, lineHeight: 20, maxWidth: 240 },
     face: { alignItems: 'center', gap: 12 },
     seal: { width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderStyle: 'dashed', borderColor: C.sealedInk, alignItems: 'center', justifyContent: 'center' },
     sealText: { color: C.sealedInk, fontFamily: MONO, fontSize: 12, letterSpacing: 1.5 },
